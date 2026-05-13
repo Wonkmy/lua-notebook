@@ -1,0 +1,150 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import MonacoEditor from 'monaco-editor-vue3'
+import { invoke } from '@tauri-apps/api/core'
+
+type CodeBlock = {
+  id: number
+  code: string
+  output: string
+}
+
+const blocks = ref<CodeBlock[]>([
+  {
+    id: Date.now(),
+    code: `a = 5\nprint(a)`,
+    output: ''
+  }
+])
+
+function addBlock() {
+  blocks.value.push({
+    id: Date.now(),
+    code: `print("hello lua")`,
+    output: ''
+  })
+}
+
+function removeBlock(id: number) {
+  // 至少保留一个代码块，避免页面空掉
+  if (blocks.value.length <= 1) return
+
+  blocks.value = blocks.value.filter(block => block.id !== id)
+}
+
+// function runBlock(block: CodeBlock) {
+//   // 这里先做假输出，下一步再接 Rust + lua.exe
+//   block.output = `准备执行：\n${block.code}`
+// }
+async function runBlock(block: CodeBlock) {
+
+  try {
+
+    const result = await invoke<string>('run_lua', {
+      code: block.code
+    })
+
+    block.output = result
+  }
+  catch (e) {
+
+    block.output = String(e)
+  }
+}
+</script>
+
+<template>
+  <div class="app">
+    <div class="topbar">
+      <button @click="addBlock">Add Block</button>
+    </div>
+
+    <div class="notebook">
+      <div
+        v-for="block in blocks"
+        :key="block.id"
+        class="block"
+      >
+        <div class="block-header">
+          <button @click="runBlock(block)">Run</button>
+          <button @click="removeBlock(block.id)">Delete</button>
+        </div>
+
+        <MonacoEditor
+          v-model:value="block.code"
+          language="lua"
+          theme="vs-dark"
+          height="180px"
+          :options="{
+            fontSize: 16,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false
+          }"
+        />
+
+        <pre class="output">{{ block.output }}</pre>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style>
+html, body, #app, .app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app {
+  background: #1e1e1e;
+  color: #ddd;
+}
+
+.topbar {
+  height: 50px;
+  background: #222;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid #333;
+}
+
+button {
+  height: 32px;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.notebook {
+  height: calc(100vh - 50px);
+  overflow-y: auto;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.block {
+  margin-bottom: 18px;
+  border: 1px solid #333;
+  background: #252526;
+}
+
+.block-header {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #333;
+}
+
+.output {
+  min-height: 40px;
+  margin: 0;
+  padding: 10px;
+  background: #111;
+  color: #9cdcfe;
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+</style>
