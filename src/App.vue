@@ -2,6 +2,53 @@
 import { ref } from 'vue'
 import MonacoEditor from 'monaco-editor-vue3'
 import { invoke } from '@tauri-apps/api/core'
+const currentKernel =
+  ref("builtin")
+
+async function switchKernel(
+  e: Event
+) {
+
+  const value =
+    (e.target as HTMLSelectElement)
+      .value
+
+  currentKernel.value =
+    value
+
+  await invoke(
+    'switch_kernel',
+    {
+      kernelType: value
+    }
+  )
+  await refreshGlobals()
+}
+
+const globals = ref<[string, string][]>([])
+async function stopLua() {
+
+  await invoke('restart_lua')
+}
+async function resetLua() {
+
+  await invoke('reset_lua')
+
+  globals.value = []
+
+  for (const block of blocks.value) {
+
+    block.output = ''
+  }
+}
+
+async function refreshGlobals() {
+
+  globals.value =
+    await invoke<[string, string][]>(
+      'get_globals'
+    )
+}
 
 type CodeBlock = {
   id: number
@@ -45,6 +92,7 @@ async function runBlock(block: CodeBlock) {
     })
 
     block.output = result
+    await refreshGlobals()
   }
   catch (e) {
 
@@ -55,36 +103,64 @@ async function runBlock(block: CodeBlock) {
 
 <template>
   <div class="app">
+
     <div class="topbar">
       <button @click="addBlock">Add Block</button>
+      <button @click="stopLua">Stop</button>
+      <button @click="resetLua">Reset</button>
     </div>
 
-    <div class="notebook">
-      <div
-        v-for="block in blocks"
-        :key="block.id"
-        class="block"
-      >
-        <div class="block-header">
-          <button @click="runBlock(block)">Run</button>
-          <button @click="removeBlock(block.id)">Delete</button>
+    <div class="layout">
+
+      <div class="main">
+
+        <div class="notebook">
+          <div
+            v-for="block in blocks"
+            :key="block.id"
+            class="block"
+          >
+            <div class="block-header">
+              <button @click="runBlock(block)">Run</button>
+              <button @click="removeBlock(block.id)">Delete</button>
+            </div>
+
+            <MonacoEditor
+              v-model:value="block.code"
+              language="lua"
+              theme="vs-dark"
+              height="180px"
+              :options="{
+                fontSize: 16,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false
+              }"
+            />
+
+            <pre class="output">{{ block.output }}</pre>
+          </div>
         </div>
 
-        <MonacoEditor
-          v-model:value="block.code"
-          language="lua"
-          theme="vs-dark"
-          height="180px"
-          :options="{
-            fontSize: 16,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false
-          }"
-        />
-
-        <pre class="output">{{ block.output }}</pre>
       </div>
+
+      <div class="globals">
+
+        <div class="globals-title">
+          Globals
+        </div>
+
+        <div
+          v-for="item in globals"
+          :key="item[0]"
+          class="global-item"
+        >
+          {{ item[0] }} : {{ item[1] }}
+        </div>
+
+      </div>
+
     </div>
+
   </div>
 </template>
 
@@ -146,5 +222,33 @@ button {
   color: #9cdcfe;
   white-space: pre-wrap;
   font-size: 14px;
+}
+.layout {
+  display: flex;
+  height: 100%;
+}
+
+.main {
+  flex: 1;
+  overflow: hidden;
+}
+
+.globals {
+  width: 240px;
+  background: #181818;
+  border-left: 1px solid #333;
+  overflow-y: auto;
+}
+
+.globals-title {
+  padding: 12px;
+  font-weight: bold;
+  border-bottom: 1px solid #333;
+}
+
+.global-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid #222;
+  font-size: 13px;
 }
 </style>
